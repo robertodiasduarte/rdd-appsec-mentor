@@ -1,0 +1,12 @@
+[
+  {
+    "id": "F-001",
+    "title": "Exemplo: autorização por objeto não confirmada",
+    "confidence": "Hipótese",
+    "gravity": 3,
+    "urgency": 2,
+    "trend": 3,
+    "evidence": "Substitua por evidência real, sem segredos ou dados de cliente.",
+    "remediation": "Substitua pelo passo a passo de correção e reteste."
+  }
+]
