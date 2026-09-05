@@ -27,7 +27,9 @@ Baixe o `.zip` da [última Release](../../releases/latest).
 
 - **Claude (claude.ai):** Configurações → Capacidades → Skills → upload do `.zip` **sem descompactar**.
 - **ChatGPT:** Configurações → Habilidades (`chatgpt.com/admin/skills`) → **+** → arraste o `.zip`. Sem acesso à administração? Crie um Projeto, envie os arquivos e instrua: *"Siga o SKILL.md que está nos arquivos deste projeto."*
-- **Claude Code · Codex CLI · Cursor:** descompacte e copie a pasta `rdd-appsec-mentor/` para `~/.claude/skills/` (ou `.claude/skills/` dentro de um projeto).
+- **Claude Code:** `npx skills add robertodiasduarte/rdd-appsec-mentor -a claude-code -y` (instala em `.claude/skills/` do projeto; com `-g`, em `~/.claude/skills/`).
+- **Codex:** `npx skills add robertodiasduarte/rdd-appsec-mentor -a codex -y` (instala em `.agents/skills/` do projeto; com `-g`, em `~/.codex/skills/`).
+- **Cursor, Kimi e outros:** mesmo comando com o nome do agente em `-a`. Sem Node.js, descompacte o `.zip` e copie a pasta `rdd-appsec-mentor/` para o diretório de skills do seu agente.
 
 Depois acione pelo nome: *"Use a skill rdd-appsec-mentor. Quero diagnosticar a segurança do meu app."*
 
@@ -83,7 +85,9 @@ Download the `.zip` from the [latest Release](../../releases/latest).
 
 - **Claude (claude.ai):** Settings → Capabilities → Skills → upload the `.zip` **without unzipping**.
 - **ChatGPT:** Settings → Skills (`chatgpt.com/admin/skills`) → **+** → drop the `.zip` in. No admin access? Create a Project, upload the files, and instruct: *"Follow the SKILL.md in this project's files."*
-- **Claude Code · Codex CLI · Cursor:** unzip and copy the `rdd-appsec-mentor/` folder into `~/.claude/skills/` (or a project's `.claude/skills/`).
+- **Claude Code:** `npx skills add robertodiasduarte/rdd-appsec-mentor -a claude-code -y` (project's `.claude/skills/`; `-g` for `~/.claude/skills/`).
+- **Codex:** `npx skills add robertodiasduarte/rdd-appsec-mentor -a codex -y` (project's `.agents/skills/`; `-g` for `~/.codex/skills/`).
+- **Cursor, Kimi and others:** same command with your agent's name in `-a`. Without Node.js, unzip and copy `rdd-appsec-mentor/` into your agent's skills directory.
 
 Then invoke it by name: *"Use the rdd-appsec-mentor skill. I want to diagnose my app's security."*
 
