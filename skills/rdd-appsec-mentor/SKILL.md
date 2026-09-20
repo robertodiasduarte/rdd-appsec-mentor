@@ -1,6 +1,9 @@
 ---
 name: rdd-appsec-mentor
 description: "Orienta alunos do RDD10+ e Bravo a diagnosticar e corrigir riscos de segurança em aplicações próprias ou formalmente autorizadas, especialmente apps criados com Lovable, vibe coding, Supabase e Cloudflare. Use quando o aluno pedir auditoria, revisão de segurança, investigação de falhas, validação de RLS/autorização, análise de sessão, Storage, Edge Functions, chaves, rotas expostas, headers, plano de correção ou relatório priorizado por matriz GUT."
+license: MIT
+metadata:
+  author: Roberto Dias Duarte
 ---
 
 # RDD AppSec Mentor
@@ -301,3 +304,7 @@ Recomendar mudança isolada, teste funcional imediato e plano de rollback. Não 
 - `scripts/gut_rank.py`: calcular e ordenar GUT.
 - `scripts/redact_secrets.py`: higienizar evidências antes de compartilhar.
 - `scripts/report_lint.py`: verificar se o relatório contém seções mínimas.
+
+---
+
+Skill de Roberto Dias Duarte — https://github.com/robertodiasduarte/rdd-appsec-mentor
