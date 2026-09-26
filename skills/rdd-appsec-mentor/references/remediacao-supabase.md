@@ -635,11 +635,12 @@ verify_jwt = false
 ```
 
 ```ts
-// dentro da edge: CORS por allowlist → token → getUser() no servidor → papel/tenant → só então service_role
+// dentro da edge: preflight → CORS por allowlist → token → getUser() no servidor → papel/tenant → só então service_role
+if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });  // ANTES de olhar Authorization: o preflight não o carrega
 const jwt = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
-if (!jwt) return json({ error: "unauthorized" }, 401);
+if (!jwt) return json({ error: "unauthorized" }, 401, cors);
 const { data: { user }, error } = await createClient(url, anonKey).auth.getUser(jwt);
-if (error || !user) return json({ error: "unauthorized" }, 401);
+if (error || !user) return json({ error: "unauthorized" }, 401, cors);
 // autorizar para o OBJETO/tenant (nunca confiar em id vindo do body):
 // const podeVer = await checaDono(user.id, params.id); if (!podeVer) return json({ error: "forbidden" }, 403);
 // só depois: const admin = createClient(url, serviceRoleKey); ...
