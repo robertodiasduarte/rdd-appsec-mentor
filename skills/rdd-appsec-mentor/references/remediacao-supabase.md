@@ -164,7 +164,9 @@ Variantes que mordem:
 
 ```sql
 BEGIN;
-REVOKE EXECUTE ON FUNCTION public.minha_fn(uuid) FROM anon;
+REVOKE ALL     ON FUNCTION public.minha_fn(uuid) FROM PUBLIC;        -- o dry-run aplica a MESMA correção completa;
+REVOKE EXECUTE ON FUNCTION public.minha_fn(uuid) FROM anon;          -- revogar só de anon esconde o acesso herdado de PUBLIC
+REVOKE EXECUTE ON FUNCTION public.minha_fn(uuid) FROM authenticated;
 SET LOCAL ROLE anon;
 SELECT count(*) FROM minha_tabela;
 ROLLBACK;
@@ -215,8 +217,11 @@ Impeça que a **próxima** função nasça aberta:
 
 ```sql
 ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC, anon, authenticated;
--- esperado: a query de pg_default_acl (Detectar) passa a mostrar só postgres/service_role.
--- Atenção: isto vale para funções criadas pelo MESMO role que rodou o comando (normalmente postgres).
+-- esperado: a query de pg_default_acl (Detectar) passa a mostrar só postgres/service_role — sem `=X` (PUBLIC), sem anon, sem authenticated.
+-- Como funciona: a entrada de pg_default_acl do schema SUBSTITUI o default embutido do Postgres (EXECUTE a PUBLIC) para
+-- as funções novas criadas nesse schema pelo MESMO role que rodou o comando (normalmente postgres). Funções criadas por
+-- outro role, ou em outro schema, continuam com o default — repita o comando `FOR ROLE <role>` / `IN SCHEMA <schema>`.
+-- Prova depois: crie uma função descartável e rode has_function_privilege('anon', …) → esperado false; depois DROP dela.
 ```
 
 Rollback, só se um chamador legítimo quebrou e o mapa de chamadores estava incompleto:
@@ -276,8 +281,10 @@ Mais o grep no front e nas Edge Functions por `from('minha_view')`.
 
 ### Corrigir
 
+Vale para `relkind = 'v'`. **Materialized view (`relkind = 'm'`) não aceita `security_invoker`** — ela é uma tabela física, sem RLS possível: a única correção é o `REVOKE` abaixo (e, se o front logado precisa dela, servir por Edge Function ou RPC que autorize antes de ler).
+
 ```sql
-ALTER VIEW public.minha_view SET (security_invoker = on);   -- a view passa a respeitar a RLS de quem consulta
+ALTER VIEW public.minha_view SET (security_invoker = on);   -- a view passa a respeitar a RLS de quem consulta (só relkind = 'v')
 REVOKE ALL ON public.minha_view FROM anon, authenticated;   -- fecha a leitura direta; service_role ignora RLS/invoker e não quebra
 -- esperado: 2 comandos sem erro. Idempotente: pode rodar de novo.
 -- Se o front LOGADO precisa da view: mantenha `GRANT SELECT ON public.minha_view TO authenticated` — com invoker ligado,
@@ -370,8 +377,11 @@ Policy não tem "chamador" — tem **leitor**. Antes de trocar uma `USING (true)
 ### Corrigir
 
 ```sql
--- 1) trocar a policy aberta por uma ancorada no dono (uma tabela por vez)
+-- 0) RLS LIGADA — sem isto nenhuma policy vale (lint policy_exists_rls_disabled) e o GRANT abaixo abre a tabela inteira
+ALTER TABLE public.minha_tabela ENABLE ROW LEVEL SECURITY;
+-- 1) trocar a policy aberta por uma ancorada no dono (uma tabela por vez; DROP IF EXISTS antes do CREATE = idempotente)
 DROP POLICY IF EXISTS "policy_aberta" ON public.minha_tabela;
+DROP POLICY IF EXISTS minha_tabela_le_proprio ON public.minha_tabela;
 CREATE POLICY minha_tabela_le_proprio ON public.minha_tabela
   FOR SELECT TO authenticated
   USING (dono_user_id = auth.uid());
@@ -379,7 +389,7 @@ CREATE POLICY minha_tabela_le_proprio ON public.minha_tabela
 GRANT SELECT ON public.minha_tabela TO authenticated;
 -- 3) anon não deve nem alcançar tabela com dado de cliente
 REVOKE ALL ON public.minha_tabela FROM anon;
--- esperado: 4 comandos sem erro. Dar GRANT SELECT a authenticated é seguro: a RLS filtra as linhas — quem não casa recebe [] e não erro.
+-- esperado: 6 comandos sem erro, e pode rodar de novo. Dar GRANT SELECT a authenticated é seguro SÓ com RLS ligada: a RLS filtra as linhas — quem não casa recebe [] e não erro.
 ```
 
 Escrita: `FOR INSERT … WITH CHECK (dono_user_id = auth.uid())` e `FOR UPDATE … USING (…) WITH CHECK (…)` — `with_check = 'true'` deixa qualquer conta escrever em qualquer linha. Cuidado com `auth.uid() IS NULL` em `OR`: NULL em três valores não é `false`, e um JWT sem `sub` passa por ele.
@@ -398,6 +408,8 @@ curl -sI "https://SEUPROJETO.supabase.co/rest/v1/minha_tabela?select=id" \
 ```
 
 ```sql
+SELECT relrowsecurity AS rls_ligada, relforcerowsecurity AS rls_forcada FROM pg_class WHERE oid = 'public.minha_tabela'::regclass;
+-- esperado: true | (true ou false). false na 1ª coluna = as policies não valem nada.
 SELECT policyname, roles, cmd, qual FROM pg_policies WHERE tablename = 'minha_tabela';
 -- esperado: nenhuma linha com qual = 'true'; a nova policy presente; grant de authenticated confirmado em role_table_grants.
 ```
@@ -468,6 +480,8 @@ UPDATE storage.buckets SET public = false WHERE id = 'meu-bucket';
 
 -- policies em storage.objects ancoradas no dono ou no prefixo do tenant (uma por operação)
 DROP POLICY IF EXISTS "leitura aberta" ON storage.objects;
+DROP POLICY IF EXISTS meu_bucket_le_proprio ON storage.objects;      -- idempotente: pode rodar de novo
+DROP POLICY IF EXISTS meu_bucket_sobe_proprio ON storage.objects;
 CREATE POLICY meu_bucket_le_proprio ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'meu-bucket' AND (storage.foldername(name))[1] = auth.uid()::text);
@@ -521,9 +535,12 @@ Enumeração mínima no próprio site (dentro da ética da skill: só caminhos d
 
 ```bash
 for p in /.env /.env.production /.env.local /.git/HEAD /.git/config /supabase/config.toml /config.json; do
-  printf '%-24s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "https://SEUAPP.exemplo/$p"
+  printf '%-24s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "https://SEUAPP.exemplo$p"
 done
-# esperado: 404 (ou 403) em todos. 200 em /.env* ou /.git/HEAD = ACHADO P0.
+# esperado: 404 (ou 403) em todos.
+# 200 com content-type text/html costuma ser o fallback da SPA devolvendo index.html — NÃO é o arquivo. Confirme o conteúdo:
+curl -s "https://SEUAPP.exemplo/.env" | head -c 300
+# achado P0 só se o corpo tem cara do arquivo: linhas CHAVE=valor no /.env, `ref: refs/heads/` no /.git/HEAD, `[core]` no /.git/config.
 ```
 
 ```bash

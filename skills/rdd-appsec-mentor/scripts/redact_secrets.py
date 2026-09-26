@@ -39,7 +39,7 @@ PATTERNS = [
 
 # Long hex tokens are only redacted on lines that look like they carry a credential —
 # a bare commit SHA or a SHA256 checksum in evidence stays readable.
-KEY_LABEL = re.compile(r"(?i)\b(token|secret|key|api|password|passwd|senha|credential)\b")
+KEY_LABEL = re.compile(r"(?i)(?:^|[^a-z])(token|secret|key|api|password|passwd|senha|credential)(?:[^a-z]|$)")  # `_` conta como fronteira: ACCESS_TOKEN=, api_key:
 HEX_TOKEN = re.compile(r"\b[0-9a-fA-F]{32,}\b")
 
 

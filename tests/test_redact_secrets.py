@@ -59,6 +59,11 @@ class HexTokens(unittest.TestCase):
         self.assertNotIn("REDACTED", rs.redact("token=" + "a" * 31))   # 31: fica
         self.assertIn("<HEX_TOKEN_REDACTED>", rs.redact("token=" + "a" * 32))   # 32: redige
 
+    def test_hex_com_rotulo_composto_por_underscore(self):
+        # ACCESS_TOKEN= — o `_` não é fronteira `\b`, mas tem de contar como rótulo de chave (review pós-build R3)
+        self.assertEqual(rs.redact("ACCESS_TOKEN=" + "c" * 64), "ACCESS_TOKEN=<HEX_TOKEN_REDACTED>")
+        self.assertEqual(rs.redact("x_api_secret: " + "d" * 40), "x_api_secret: <HEX_TOKEN_REDACTED>")
+
     def test_hex_sem_rotulo_de_chave_fica(self):
         sha = "0123456789abcdef" * 4   # SHA256 em evidência: linha sem rótulo de chave
         self.assertEqual(rs.redact(f"{sha}  rdd-appsec-mentor.zip"), f"{sha}  rdd-appsec-mentor.zip")
