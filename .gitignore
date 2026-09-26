@@ -2,3 +2,7 @@ dist/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Ferramentas locais de agente (nunca publicar)
+.claude/
+.agents/
