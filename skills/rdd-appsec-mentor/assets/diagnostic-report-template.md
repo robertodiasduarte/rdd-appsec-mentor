@@ -36,9 +36,11 @@
 
 ## 4. Matriz GUT
 
-| ID | Achado | Confiança | G | U | T | GUT | Prioridade |
-|---|---|---|---:|---:|---:|---:|---|
-| F-001 | [título] | Confirmado | 5 | 5 | 4 | 100 | P0 |
+| ID | Achado | Confiança | G | U | T | GUT | Prioridade | Status | Reteste |
+|---|---|---|---:|---:|---:|---:|---|---|---|
+| F-001 | [título] | Confirmado | 5 | 5 | 4 | 100 | P0 | aberto | [pendente / AAAA-MM-DD: passou] |
+
+Status: `aberto` → `corrigido` → `verificado` (prova registrada) → `aceito` (risco aceito pelo dono, com motivo).
 
 ## 5. Achados detalhados
 
@@ -46,26 +48,38 @@
 
 **Componente:** [Supabase/RLS/Edge/Storage/Auth/Cloudflare/etc.]  
 **Confiança:** [Confirmado/Provável/Hipótese]  
+**Status:** [aberto/corrigido/verificado/aceito]  
 **Evidência:** [o que foi observado, sem segredo/dado real]  
+**Caminho de reprodução:** [comando mínimo e autorizado + saída, sem PII]  
 **Impacto:** [impacto técnico + negócio]  
 **Por que G=[x], U=[y], T=[z]:** [justificativa breve]  
 **Causa provável:** [causa]
 
+#### Chamadores confirmados
+
+| Objeto | Chamador | Role | Ação |
+|---|---|---|---|
+| [função/tabela/view/bucket] | [front / edge X / cron / policy Y / integração Z] | [anon/authenticated/service_role] | [manter / migrar / quebra aceita] |
+
+Fontes consultadas: [grep no repo · edges com service_role · cron/triggers · pg_policy · pg_depend/prosrc · pg_stat_statements × pg_roles · integrações externas]
+
 #### Como corrigir
 
-1. [passo]
+1. [passo — alvo exato, uma mudança por vez]
 2. [passo]
-3. [passo]
+3. [rollback preparado: bloco que desfaz]
 
 #### Prompt opcional para Lovable
 
 [Prompt curto, específico, descrevendo controle esperado e proibindo alteração fora do escopo.]
 
-#### Como provar que corrigiu
+#### Prova pós-correção (comando + saída esperada)
 
-**Antes:** [teste e resultado anterior]  
-**Depois esperado:** [resultado seguro]  
-**Teste de regressão:** [como evitar reabertura]
+**Antes:** [comando + saída que demonstrou a falha — guardada antes do fix]  
+**Depois esperado:** [pelo privilégio: `has_function_privilege`/`has_table_privilege`/`pg_policies` → valor esperado]  
+**Depois pelo vetor real:** [mesmo `curl` → `42501`/`permission denied`/`[]` esperado]  
+**Fluxo legítimo:** [o que continuou funcionando e como foi conferido]  
+**Tripwire:** [query que deve voltar 0 linhas a cada deploy]
 
 ## 6. Plano de ação ordenado
 
@@ -83,15 +97,13 @@
 
 ## 7. Verificação pós-correção
 
-- [ ] Repetir teste original.
-- [ ] Validar fluxo legítimo.
-- [ ] Procurar caminho alternativo.
-- [ ] Registrar evidência antes/depois.
-- [ ] Adicionar teste recorrente quando aplicável.
+| ID | Reteste original | Prova por privilégio | Prova pelo vetor real | Fluxo legítimo | Caminho alternativo | Tripwire | Status |
+|---|---|---|---|---|---|---|---|
+| F-001 | [pendente / passou em AAAA-MM-DD] | [comando → saída] | [comando → saída] | [ok / quebrou: o quê] | [procurado: onde] | [criada / n.a.] | [verificado / aberto] |
 
 ## 8. Risco residual e pendências
 
-[O que ainda não foi possível validar e por quê.]
+[O que ainda não foi possível validar e por quê. Achados `aceito`: motivo e responsável.]
 
 ## 9. Próximos passos do aluno
 

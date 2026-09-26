@@ -13,6 +13,7 @@ Feita para quem publicou um app funcionando e precisa saber o que ficou aberto �
 - **Investiga o que realmente quebra:** BOLA/IDOR, rotas administrativas acessíveis, invalidação de sessão, RLS e grants, funções `SECURITY DEFINER`, Edge Functions sem validação de token, buckets de Storage, segredos vazados no frontend e rotas de debug esquecidas em produção.
 - **Não confunde suspeita com falha.** Todo achado carrega nível de confiança — `Confirmado`, `Provável` ou `Hipótese`. Achado sem reprodução não vira "confirmado".
 - **Prioriza com GUT** (Gravidade × Urgência × Tendência), com cálculo determinístico por script — não por impressão.
+- **Não para no achado.** Para cada classe de falha, ensina a corrigir e a **provar** que fechou: mapa de chamadores antes de qualquer `REVOKE`, o bloco de correção com alvo exato, a prova pelo privilégio e pelo vetor real, e a tripwire que acusa se reabrir.
 - **Nunca declara a aplicação "100% segura".** O relatório declara escopo, evidências, limitações e risco residual.
 
 ## O que ela não faz
@@ -37,10 +38,11 @@ Depois acione pelo nome: *"Use a skill rdd-appsec-mentor. Quero diagnosticar a s
 
 | Caminho | Conteúdo |
 |---|---|
-| `SKILL.md` | O método completo: gate de autorização, 9 etapas do diagnóstico, contrato de evidência |
+| `SKILL.md` | O método completo: gate de autorização, 10 etapas do diagnóstico, contrato de evidência |
 | `references/authorized-testing.md` | Limites do teste autorizado |
 | `references/rdd-security-playbook.md` | Testes funcionais com duas contas sintéticas |
-| `references/supabase-lovable-cloudflare.md` | Auditoria de RLS, Storage, Edge Functions, headers |
+| `references/supabase-lovable-cloudflare.md` | Auditoria de RLS, Storage, Edge Functions, headers; tabela lint do Advisor → classe de achado |
+| `references/remediacao-supabase.md` | Depois do achado: detectar → mapa de chamadores → corrigir → provar → tripwire e rollback, por classe (função `SECURITY DEFINER`, view, policy, bucket, segredo exposto, Edge Function) |
 | `references/gut-matrix.md` | Critérios de pontuação G, U e T |
 | `scripts/gut_rank.py` | Ranqueamento determinístico dos achados |
 | `scripts/redact_secrets.py` | Higienização de segredos em evidências |
@@ -71,6 +73,7 @@ Built for people who shipped a working app and need to know what was left open �
 - **Investigates what actually breaks:** BOLA/IDOR, reachable admin routes, session invalidation, RLS and grants, `SECURITY DEFINER` functions, Edge Functions missing token validation, Storage buckets, secrets leaked to the frontend, and forgotten debug routes in production.
 - **Never conflates suspicion with fact.** Every finding carries a confidence level — `Confirmed`, `Likely` or `Hypothesis`. A finding without reproduction never becomes "confirmed".
 - **Prioritizes with GUT** (Gravity × Urgency × Tendency), computed deterministically by script rather than by impression.
+- **Does not stop at the finding.** For each class of flaw it teaches how to fix it and how to **prove** it is closed: a caller map before any `REVOKE`, the fix block with an exact target, proof by privilege and by the real vector, and a tripwire that flags it if it reopens.
 - **Never declares an app "100% secure".** The report states scope, evidence, limitations and residual risk.
 
 ## What it does not do

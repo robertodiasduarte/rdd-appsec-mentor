@@ -3,6 +3,8 @@
 
 Input: JSON array of findings with gravity, urgency and trend in [1, 5].
 Output: markdown, JSON or CSV sorted by score, then G, U and T.
+Extra fields are preserved; `status` (aberto | corrigido | verificado | aceito)
+is validated when present and shown as a column.
 No network access and no third-party dependencies.
 """
 from __future__ import annotations
@@ -14,6 +16,8 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+
+STATUS_VALUES = ("aberto", "corrigido", "verificado", "aceito")
 
 
 def priority(score: int) -> str:
@@ -34,8 +38,16 @@ def validate_score(name: str, value: Any, finding_id: str) -> int:
     return value
 
 
-def load_findings(path: Path) -> list[dict[str, Any]]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+def validate_status(value: Any, finding_id: str) -> str:
+    if value is None or value == "":
+        return ""
+    status = str(value).strip().lower()
+    if status not in STATUS_VALUES:
+        raise ValueError(f"{finding_id}: status deve ser um de {', '.join(STATUS_VALUES)}")
+    return status
+
+
+def rank_findings(data: Any) -> list[dict[str, Any]]:
     if not isinstance(data, list) or not data:
         raise ValueError("o JSON deve ser uma lista não vazia de achados")
 
@@ -56,10 +68,11 @@ def load_findings(path: Path) -> list[dict[str, Any]]:
         u = validate_score("urgency", item.get("urgency"), fid)
         t = validate_score("trend", item.get("trend"), fid)
         score = g * u * t
+        status = validate_status(item.get("status"), fid)
 
         out = dict(item)
         out.update({"id": fid, "gravity": g, "urgency": u, "trend": t,
-                    "gut_score": score, "priority": priority(score)})
+                    "gut_score": score, "priority": priority(score), "status": status})
         ranked.append(out)
 
     ranked.sort(
@@ -74,23 +87,29 @@ def load_findings(path: Path) -> list[dict[str, Any]]:
     return ranked
 
 
+def load_findings(path: Path) -> list[dict[str, Any]]:
+    return rank_findings(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _cell(value: Any) -> str:
+    return str(value).replace("|", r"\|").replace("\n", " ")
+
+
 def as_markdown(items: list[dict[str, Any]]) -> str:
     lines = [
-        "| ID | Achado | Confiança | G | U | T | GUT | Prioridade |",
-        "|---|---|---|---:|---:|---:|---:|---|",
+        "| ID | Achado | Confiança | G | U | T | GUT | Prioridade | Status |",
+        "|---|---|---|---:|---:|---:|---:|---|---|",
     ]
     for x in items:
-        title = str(x["title"]).replace("|", r"\|").replace("\n", " ")
-        confidence = str(x.get("confidence", "")).replace("|", r"\|").replace("\n", " ")
         lines.append(
-            f"| {x['id']} | {title} | {confidence} | {x['gravity']} | "
-            f"{x['urgency']} | {x['trend']} | {x['gut_score']} | {x['priority']} |"
+            f"| {x['id']} | {_cell(x['title'])} | {_cell(x.get('confidence', ''))} | {x['gravity']} | "
+            f"{x['urgency']} | {x['trend']} | {x['gut_score']} | {x['priority']} | {_cell(x.get('status', ''))} |"
         )
     return "\n".join(lines)
 
 
 def as_csv(items: list[dict[str, Any]]) -> str:
-    fields = ["id", "title", "confidence", "gravity", "urgency", "trend", "gut_score", "priority"]
+    fields = ["id", "title", "confidence", "gravity", "urgency", "trend", "gut_score", "priority", "status"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

@@ -70,9 +70,9 @@ Falha se credencial sensível for transportada em query string.
 
 ### Teste E — debug/teste em produção
 
-Verificar somente caminhos conhecidos do próprio projeto e candidatos mínimos aprovados no escopo, como `/debug`, `/test`, `/status` e `/info`.
+Verificar somente caminhos conhecidos do próprio projeto e candidatos mínimos aprovados no escopo, como `/debug`, `/test`, `/status` e `/info` — e os arquivos que costumam ser esquecidos na pasta pública: `/.env`, `/.env.production`, `/.env.local`, `/.git/HEAD`, `/.git/config`, `/supabase/config.toml`, `/config.json` e source maps (`*.js.map`) referenciados pelos bundles.
 
-Falha quando configuração, segredo, dado ou operação sensível está exposta sem necessidade.
+Falha quando configuração, segredo, dado ou operação sensível está exposta sem necessidade. `.env` na pasta pública quase sempre está também no histórico do git (`git log --all -- .env`); rotação e ordem em [remediacao-supabase.md §5](remediacao-supabase.md).
 
 ### Teste F — primeiro acesso previsível
 
@@ -91,12 +91,15 @@ SELECT c.relname AS tabela_sem_rls
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
-  AND c.relkind = 'r'
+  AND c.relkind IN ('r', 'p')
   AND NOT c.relrowsecurity
 ORDER BY 1;
+-- esperado: 0 linhas. `relkind IN ('r','p')` cobre tabelas comuns e particionadas.
 ```
 
 Interpretar junto com grants, exposição da Data API e políticas. Uma tabela no schema exposto sem RLS deve ser tratada como alta prioridade até provar que não está acessível aos papéis clientes.
+
+Esta query **não enxerga views** (`relkind = 'v'`): uma view sem `security_invoker` fura a RLS das tabelas-base e nasce legível por `anon`. Detecção e correção em [remediacao-supabase.md §2](remediacao-supabase.md). Policies conflitantes, permissivas ou inertes: [§3](remediacao-supabase.md).
 
 ### 3.2 Acesso direto pela Data API
 
@@ -106,10 +109,20 @@ Exemplo conceitual:
 
 ```bash
 curl "https://SEUPROJETO.supabase.co/rest/v1/TABELA_SINTETICA?select=*&limit=5" \
-  -H "apikey: CHAVE_PUBLICAVEL_OU_ANON"
+  -H "apikey: <ANON_KEY>"
+# esperado: nenhum registro não público e nenhuma operação além do desenho de acesso previsto.
 ```
 
-Esperado: nenhum registro não público e nenhuma operação além do desenho de acesso previsto.
+Em produção, sem tabela sintética, conte sem transferir nenhuma linha:
+
+```bash
+curl -sI "https://SEUPROJETO.supabase.co/rest/v1/TABELA?select=id" \
+  -H "apikey: <ANON_KEY>" -H "Prefer: count=exact"
+# esperado (fechada): HTTP 401/403 ou content-range: */0
+# achado Confirmado: content-range: 0-16/17 → o número após a barra é quantas linhas o visitante vê, sem login e sem PII no relatório
+```
+
+Detalhe em [remediacao-supabase.md §0.1](remediacao-supabase.md).
 
 ### 3.3 Funções privilegiadas
 
@@ -137,19 +150,32 @@ Para cada função:
 - ela é usada em policy RLS?
 - o chamador usa privilégio de backend que bypassa RLS?
 
-Antes de revogar, mapear dependências e testar. Preferir mudanças específicas e reversíveis.
+Esta query já resolve herança de `PUBLIC` e grants diretos — ela está certa. O que vem **depois** dela (alvo por assinatura, `REVOKE` dos três, prova por privilégio e por vetor real, tripwire) está em [remediacao-supabase.md §1](remediacao-supabase.md). Antes de revogar, o mapa de chamadores (etapa 10.1 do SKILL.md) é obrigatório: uma policy `TO public` que chama a função derruba o `SELECT` da tabela inteira.
 
 ### 3.4 Edge Functions
 
 Verificar:
 
-- autenticação do token;
+- autenticação do token **no servidor** (`getUser()`), nunca decodificando o JWT — e `verify_jwt = false` no `config.toml` quando a edge é chamada pelo navegador (com `true`, o gateway derruba o preflight CORS antes do código; ver [remediacao-supabase.md §6](remediacao-supabase.md));
 - autorização por objeto/tenant;
 - ordem da autorização antes de operação com privilégio elevado;
 - segredos só no lado servidor;
 - respostas e logs sem dados sensíveis.
 
 ### 3.5 Storage
+
+```sql
+SELECT id, name, public, file_size_limit, allowed_mime_types FROM storage.buckets ORDER BY public DESC, name;
+-- esperado: public = true só em bucket de asset de site (logo, ícone). Documento de cliente em bucket público é achado.
+SELECT policyname, roles, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects';
+-- esperado: nenhuma policy SELECT/INSERT com roles = '{public}' ou qual = 'true' em bucket de documentos.
+```
+
+```bash
+curl -s -w '\nhttp=%{http_code}\n' -X POST "https://SEUPROJETO.supabase.co/storage/v1/object/list/meu-bucket" \
+  -H "apikey: <ANON_KEY>" -H "Authorization: Bearer <ANON_KEY>" -H "Content-Type: application/json" -d '{"prefix":"","limit":1}'
+# esperado (fechado): []  http=200 · achado: itens listados sem login. Sem o header Authorization vem 400 e não prova nada.
+```
 
 Para cada bucket:
 
@@ -159,11 +185,13 @@ Para cada bucket:
 - políticas limitam usuário/tenant?
 - URLs assinadas têm escopo/expiração adequados?
 
+Fechar bucket e migrar os chamadores de `getPublicUrl`/`/object/public/`: [remediacao-supabase.md §4](remediacao-supabase.md).
+
 ### 3.6 Chaves
 
 - chave publishable/legada anon pode existir no cliente;
 - chave secret/legada service_role deve permanecer em backend confiável;
-- suspeita de vazamento de segredo privilegiado => rotacionar/revogar e revisar logs;
+- suspeita de vazamento de segredo privilegiado => rotacionar **na ordem certa** (criar nova → migrar consumidores → conferir logs → revogar a antiga; o JWT secret invalida `anon` e `service_role` juntas) e revisar logs — [remediacao-supabase.md §5](remediacao-supabase.md);
 - não copiar segredo para relatório.
 
 ## 4. Cloudflare / HTTP
@@ -183,6 +211,8 @@ Não aplicar política que quebre iframe, player, câmera, microfone, geolocaliz
 Usar rate limiting no login/API sensível de acordo com tráfego legítimo; não escolher valores cegamente.
 
 ## 5. Depois de corrigir
+
+Procedimento completo na etapa 10 do SKILL.md (10.1 mapa de chamadores → 10.2 corrigir → 10.3 provar pelo privilégio **e** pelo vetor real → 10.4 tripwire). Por classe de achado: [remediacao-supabase.md](remediacao-supabase.md).
 
 - guardar evidência do "antes";
 - repetir o mesmo caminho depois;

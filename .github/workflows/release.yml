@@ -19,6 +19,9 @@ jobs:
       - name: Validators compile
         run: python3 -m py_compile skills/*/scripts/*.py
 
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+
       - name: Build skill zips
         run: bash scripts/package.sh
 

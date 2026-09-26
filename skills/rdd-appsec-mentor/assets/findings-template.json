@@ -2,11 +2,19 @@
   {
     "id": "F-001",
     "title": "Exemplo: autorização por objeto não confirmada",
+    "component": "Supabase/RLS",
     "confidence": "Hipótese",
     "gravity": 3,
     "urgency": 2,
     "trend": 3,
     "evidence": "Substitua por evidência real, sem segredos ou dados de cliente.",
-    "remediation": "Substitua pelo passo a passo de correção e reteste."
+    "repro_path": "Substitua pelo caminho mínimo e autorizado de reprodução (comando + saída), sem PII.",
+    "callers_confirmed": [
+      "Substitua por 'objeto × chamador × role × ação' — um item por chamador confirmado no mapa (etapa 10.1)."
+    ],
+    "fix_sql_or_steps": "Substitua pelo bloco de correção (SQL/config/código) com alvo exato, ou pelos passos.",
+    "retest": "Substitua pelo comando de prova e a saída esperada (privilégio e vetor real).",
+    "remediation": "Substitua pelo passo a passo de correção e reteste.",
+    "status": "aberto"
   }
 ]

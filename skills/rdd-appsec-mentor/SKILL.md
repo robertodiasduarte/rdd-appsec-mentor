@@ -1,6 +1,6 @@
 ---
 name: rdd-appsec-mentor
-description: "Orienta alunos do RDD10+ e Bravo a diagnosticar e corrigir riscos de segurança em aplicações próprias ou formalmente autorizadas, especialmente apps criados com Lovable, vibe coding, Supabase e Cloudflare. Use quando o aluno pedir auditoria, revisão de segurança, investigação de falhas, validação de RLS/autorização, análise de sessão, Storage, Edge Functions, chaves, rotas expostas, headers, plano de correção ou relatório priorizado por matriz GUT."
+description: "Orienta alunos do RDD10+ e Bravo a diagnosticar e corrigir riscos de segurança em aplicações próprias ou formalmente autorizadas, especialmente apps criados com Lovable, vibe coding, Supabase e Cloudflare. Use quando o aluno pedir auditoria, revisão de segurança, investigação de falhas, validação de RLS/autorização, análise de sessão, Storage, Edge Functions, chaves, rotas expostas, headers, plano de correção, prova de que a correção fechou (REVOKE, policies, buckets, rotação de chaves) ou relatório priorizado por matriz GUT."
 license: MIT
 metadata:
   author: Roberto Dias Duarte
@@ -10,7 +10,7 @@ metadata:
 
 ## Quick start
 
-Ao ser acionado, **a primeira resposta deve solicitar a URL da aplicação** e a confirmação de autorização. Não iniciar diagnóstico técnico antes disso.
+Ao ser acionado, **a primeira resposta deve solicitar a URL da aplicação** e a confirmação de autorização. Não iniciar diagnóstico técnico antes disso. Quando o aluno está dentro do próprio repositório (Claude Code, Codex, Cursor) e o app não tem URL pública, o escopo pode ser confirmado por **project ref do Supabase + repositório local** — a confirmação de autorização continua obrigatória.
 
 Usar exatamente esta abertura, adaptando apenas o tom:
 
@@ -25,7 +25,8 @@ Depois:
 5. Registrar cada achado com evidência e nível de confiança.
 6. Calcular a prioridade com matriz GUT.
 7. Gerar relatório didático com passo a passo de correção e reteste.
-8. Nunca declarar a aplicação "100% segura"; declarar escopo, evidências, limitações e risco residual.
+8. Antes de qualquer `REVOKE`, troca de policy ou fechamento de bucket, mapear os chamadores; depois da correção, provar pelo privilégio **e** pelo vetor real (etapa 10).
+9. Nunca declarar a aplicação "100% segura"; declarar escopo, evidências, limitações e risco residual.
 
 ## Quando usar / Quando não usar
 
@@ -50,7 +51,7 @@ Se a autorização não for confirmada, interromper a investigação do alvo e o
 
 ### Obrigatórios no início
 
-- URL completa da aplicação (`https://...`).
+- URL completa da aplicação (`https://...`) — ou, no próprio repositório sem URL pública, o project ref do Supabase + o caminho do repositório.
 - Confirmação de propriedade ou autorização explícita.
 
 ### Solicitar depois, somente quando necessário
@@ -112,9 +113,9 @@ Parar assim que houver evidência suficiente. Não acessar dado real para "prova
 
 ### 4. Auditoria Supabase
 
-Consultar [references/supabase-lovable-cloudflare.md](references/supabase-lovable-cloudflare.md) e verificar, conforme evidência disponível:
+Começar pelo **Security Advisor** (Dashboard → Advisors → Security): cada lint mapeia numa classe de achado — tabela em [references/supabase-lovable-cloudflare.md](references/supabase-lovable-cloudflare.md). Depois, consultar a mesma referência e verificar, conforme evidência disponível:
 
-- RLS e grants em objetos expostos.
+- RLS e grants em objetos expostos — tabelas **e views** (view sem `security_invoker` fura a RLS das bases).
 - Políticas de leitura/escrita por usuário, organização ou papel.
 - Acesso direto pela Data API com chave de baixo privilégio/publishable quando autorizado.
 - Funções `SECURITY DEFINER`, `EXECUTE`, `search_path` e identidade do chamador.
@@ -124,7 +125,7 @@ Consultar [references/supabase-lovable-cloudflare.md](references/supabase-lovabl
 - Security Advisor / Security view.
 - Vazamento de segredo em código cliente, logs, commits ou variáveis frontend.
 
-Não presumir que "RLS ligado" significa seguro. Confirmar política e comportamento real.
+Não presumir que "RLS ligado" significa seguro. Confirmar política e comportamento real. Sem staging, contar sem transferir dado (`HEAD` com `Prefer: count=exact`) promove um achado de `Provável` a `Confirmado` sem PII — [references/remediacao-supabase.md §0](references/remediacao-supabase.md).
 
 ### 5. Revisão Lovable / vibe coding
 
@@ -203,14 +204,40 @@ O relatório deve conter, no mínimo:
 
 Para cada correção, explicar **o que fazer, onde fazer, por que fazer e como provar que funcionou**.
 
-### 10. Verificação pós-correção
+### 10. Correção e verificação
 
-1. Repetir o mesmo caminho que demonstrou a falha.
-2. Confirmar que o teste falha de modo seguro após a correção.
-3. Confirmar que o fluxo legítimo continua funcionando.
-4. Procurar caminho alternativo até o mesmo dado.
-5. Registrar evidência de antes/depois.
-6. Criar teste recorrente quando a falha puder reaparecer silenciosamente.
+Para cada achado, nesta ordem. Os blocos executáveis por classe (função `SECURITY DEFINER`, view, policy, bucket, segredo exposto, Edge Function) estão em [references/remediacao-supabase.md](references/remediacao-supabase.md).
+
+#### 10.1 Mapa de chamadores
+
+Antes de qualquer `REVOKE`, troca de policy, fechamento de bucket ou rotação de chave, descobrir quem usa o objeto hoje — é o que evita quebrar webhook, painel interno ou integração legítima. Sete fontes:
+
+1. `grep` no repositório pelo nome (função, tabela, view, bucket): front, Edge Functions, scripts.
+2. Edge Functions que usam `service_role` — não quebram com `REVOKE` de `anon`/`authenticated`, mas são o caminho legítimo a preservar.
+3. `cron.job` (pg_cron) e triggers que chamam a função.
+4. Policies RLS onde a função aparece (`pg_policy`) — policy `TO public` que chama a função derruba o `SELECT` da tabela inteira ao revogar de `anon`.
+5. Dependências no banco: `pg_depend`/`pg_rewrite` (view aninhada) e `pg_proc.prosrc` (função que chama função).
+6. `pg_stat_statements` cruzado com `pg_roles` — **quem de fato** executou, por role.
+7. Integrações externas: webhook, painel interno, automação (n8n, Zapier, Make) — confirmar com o dono.
+
+Saída: tabela **objeto × chamador × role × ação (manter / migrar / quebra aceita)** no relatório. Sem esta tabela, a correção não é aplicada.
+
+#### 10.2 Corrigir
+
+Uma mudança por vez, com alvo exato (assinatura completa da função, nome da view, id do bucket), idempotente e com o bloco de rollback escrito antes de aplicar. Recriar função só com `CREATE OR REPLACE` — `DROP` + `CREATE` zera a ACL e reabre em silêncio. Quando a correção passa pelo Lovable, produzir um prompt curto que descreva o controle esperado e proíba alteração fora do escopo.
+
+#### 10.3 Provar
+
+Duas provas, sempre:
+
+1. **Pelo privilégio** — `has_function_privilege` / `has_table_privilege` / `pg_policies` / `storage.buckets` depois do apply. O `success` de uma migration não é prova. Função com efeito colateral (apaga, mescla, envia) é provada **só** assim — nunca invocando.
+2. **Pelo vetor real** — o mesmo `curl` que demonstrou a falha, antes (guardar a saída: ela some para sempre) e depois (esperado: `42501` no corpo, não só o status HTTP). Confirmar que o fluxo legítimo continua funcionando e procurar caminho alternativo até o mesmo dado.
+
+Registrar as duas saídas no relatório como "Prova pós-correção (comando + saída esperada)".
+
+#### 10.4 Tripwire
+
+A prova mede o instante; a tripwire mede o estado. Deixar uma query que deve voltar 0 linhas (funções `SECURITY DEFINER` executáveis por `anon`, views sem `security_invoker` legíveis por `anon`, policies `USING (true)`, buckets públicos fora da allowlist) e rodá-la a cada deploy. Conferir os logs do Postgres: os únicos `42501` do período devem ser os do próprio smoke.
 
 Usar revisão adversarial da correção: tentar encontrar caminho alternativo, quebra funcional e regressão futura.
 
@@ -231,6 +258,9 @@ Antes de entregar o relatório, validar:
 - [ ] O score GUT é produto de G×U×T.
 - [ ] A prioridade segue [references/gut-matrix.md](references/gut-matrix.md).
 - [ ] Cada achado tem correção e reteste.
+- [ ] Nenhum `REVOKE`, troca de policy ou fechamento de bucket foi recomendado sem o mapa de chamadores (10.1).
+- [ ] Cada correção tem prova pelo privilégio **e** pelo vetor real, com saída esperada (10.3).
+- [ ] Há tripwire para o que pode reabrir em silêncio (10.4).
 - [ ] O relatório distingue "Confirmado", "Provável" e "Hipótese".
 - [ ] Há limitações e risco residual.
 - [ ] O aluno recebe uma sequência de ações, não apenas uma lista de problemas.
@@ -255,7 +285,7 @@ Não realizar investigação do alvo. Entregar apenas checklist geral e orienta�
 
 ### Produção contém dados reais
 
-Não pedir exploração de registros reais. Solicitar criação de staging ou duas contas/objetos sintéticos. Se isso não for possível, limitar-se a revisão estática/configuração.
+Não pedir exploração de registros reais. Solicitar criação de staging ou duas contas/objetos sintéticos. Se isso não for possível, usar a prova mínima sem PII (`HEAD` com `Prefer: count=exact` — conta linhas sem transferir nenhuma) e a prova por privilégio; a revisão estática sozinha deixa o achado em `Provável`.
 
 ### Segredo enviado no chat
 
@@ -271,7 +301,7 @@ Rebaixar para `Provável` ou `Hipótese`, registrar o que falta para confirmaç�
 
 ### Correção pode quebrar funcionalidade
 
-Recomendar mudança isolada, teste funcional imediato e plano de rollback. Não aplicar blocos SQL ou regras de segurança cegamente.
+Recomendar mudança isolada, teste funcional imediato e plano de rollback. Não aplicar blocos SQL ou regras de segurança cegamente: o mapa de chamadores (10.1) vem antes, e cada classe em [references/remediacao-supabase.md](references/remediacao-supabase.md) traz o bloco de rollback.
 
 ## Examples
 
@@ -293,12 +323,19 @@ Recomendar mudança isolada, teste funcional imediato e plano de rollback. Não 
 
 **Resultado:** classificar como `Provável`, pedir evidência do estado real e não afirmar que a aplicação está vulnerável até confirmar.
 
+### Exemplo 4 — REVOKE que "não fechou"
+
+**Contexto:** o aluno rodou `REVOKE EXECUTE … FROM anon, authenticated` e a função continua chamável pelo visitante.
+
+**Comportamento esperado:** explicar que faltou `PUBLIC` (e que `REVOKE FROM PUBLIC` sozinho também não fecha, porque o Supabase concede direto a `anon`/`authenticated`), mandar o bloco de [references/remediacao-supabase.md §1](references/remediacao-supabase.md) com alvo por assinatura, e exigir a prova `has_function_privilege` → `false | false` antes de marcar o achado como `verificado`.
+
 ## Recursos
 
 - [references/authorized-testing.md](references/authorized-testing.md): limites, autorização e dados sintéticos.
 - [references/rdd-security-playbook.md](references/rdd-security-playbook.md): roteiro operacional adaptado para alunos.
 - [references/gut-matrix.md](references/gut-matrix.md): escala GUT e faixas de prioridade.
 - [references/supabase-lovable-cloudflare.md](references/supabase-lovable-cloudflare.md): verificações específicas e fontes oficiais.
+- [references/remediacao-supabase.md](references/remediacao-supabase.md): o que fazer depois do achado — por classe, detectar → mapa de chamadores → corrigir → provar → tripwire e rollback.
 - [assets/diagnostic-report-template.md](assets/diagnostic-report-template.md): modelo do relatório final.
 - [assets/findings-template.json](assets/findings-template.json): esquema de entrada dos achados para GUT.
 - `scripts/gut_rank.py`: calcular e ordenar GUT.
